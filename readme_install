@@ -1,0 +1,397 @@
+# aws EC2 c.5 large instance
+
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+NODE_MAJOR=20
+echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
+sudo apt-get update
+sudo apt-get install nodejs -y
+node -v
+npm i aptos
+sudo npm install -g pnpm
+sudo apt install python3-pip
+pip3 install aptos-sdk
+git clone https://github.com/aptos-labs/aptos-core.git
+curl -fsSL "https://aptos.dev/scripts/install_cli.py" | python3
+
+ubuntu@ip-172-31-18-204:~$ pwd
+/home/ubuntu
+
+mkdir my-first-dapp
+cd my-first-dapp
+ubuntu@ip-172-31-18-204:~/my-first-dapp$ pwd
+/home/ubuntu/my-first-dap
+mkdir move
+
+ubuntu@ip-172-31-18-204:~/my-first-dapp$ cd move
+ubuntu@ip-172-31-18-204:~/my-first-dapp/move$
+ubuntu@ip-172-31-18-204:~/my-first-dapp/move$ /home/ubuntu/.local/bin/aptos move init --name my_todo_list
+{
+  "Result": "Success"
+}
+ubuntu@ip-172-31-18-204:~/my-first-dapp/move$
+
+ubuntu@ip-172-31-18-204:~/my-first-dapp/move$ ls
+Move.toml  scripts  sources  tests
+ubuntu@ip-172-31-18-204:~/my-first-dapp/move$
+
+ubuntu@ip-172-31-18-204:~/my-first-dapp/move$ /home/ubuntu/.local/bin/aptos init --network devnet
+Configuring for profile default
+Configuring for network Devnet
+Enter your private key as a hex literal (0x...) [Current: None | No input: Generate new key (or keep one if present)]
+
+No key given, generating key...
+Account 0xe3989b8a7d3b521b7a0debc7abd3be1bc31b8282f5cf7dc363fd3431320e1301 doesn't exist, creating it and funding it with 100000000 Octas
+Account 0xe3989b8a7d3b521b7a0debc7abd3be1bc31b8282f5cf7dc363fd3431320e1301 funded successfully
+
+---
+Aptos CLI is now set up for account 0xe3989b8a7d3b521b7a0debc7abd3be1bc31b8282f5cf7dc363fd3431320e1301 as profile default!  Run `aptos --help` for more information about commands
+{
+  "Result": "Success"
+}
+
+
+
+ubuntu@ip-172-31-18-204:~/my-first-dapp/move$ cd .aptos
+ubuntu@ip-172-31-18-204:~/my-first-dapp/move/.aptos$ ls
+config.yaml
+ubuntu@ip-172-31-18-204:~/my-first-dapp/move/.aptos$ vi config.yaml
+ubuntu@ip-172-31-18-204:~/my-first-dapp/move/.aptos$
+---
+profiles:
+  default:
+    private_key: "0x4f3ebcfe80948dfc57d83601398c562e5f8274f0d1a5f3f4647afffc0d1c69fe"
+    public_key: "0xf7a94f8866213467dc140ca47d26469a8700e77930943cc12237bdf5b46c8848"
+    account: 23393ecdc3ea6c15db022ae5425c5353964a597cefc5ed45cc7e3256a7e133cb
+    rest_url: "https://fullnode.devnet.aptoslabs.com"
+    faucet_url: "https://faucet.devnet.aptoslabs.com"
+~
+~
+~
+
+
+ubuntu@ip-172-31-18-204:~/my-first-dapp/move$ vi Move.toml
+[package]
+name = "my_todo_list"
+version = "1.0.0"
+authors = []
+
+[addresses]
+todolist_addr='e3989b8a7d3b521b7a0debc7abd3be1bc31b8282f5cf7dc363fd3431320e1301'
+
+
+[dev-addresses]
+
+[dependencies.AptosFramework]
+git = "https://github.com/aptos-labs/aptos-core.git"
+rev = "mainnet"
+subdir = "aptos-move/framework/aptos-framework"
+
+[dev-dependencies]
+
+~
+~
+
+
+ubuntu@ip-172-31-18-204:~/my-first-dapp/move/sources$ vi todolist.move
+
+#### grab from https://github.com/aptos-labs/aptos-core/tree/main/aptos-move/move-examples/my_first_dapp
+
+
+module todolist_addr::todolist {
+
+    use aptos_framework::account;
+    use std::signer;
+    use aptos_framework::event;
+    use std::string::String;
+    use aptos_std::table::{Self, Table};
+    #[test_only]
+    use std::string;
+
+    // Errors
+    const E_NOT_INITIALIZED: u64 = 1;
+    const ETASK_DOESNT_EXIST: u64 = 2;
+    const ETASK_IS_COMPLETED: u64 = 3;
+
+    struct TodoList has key {
+        tasks: Table<u64, Task>,
+        task_counter: u64
+    }
+
+    #[event]
+    struct Task has store, drop, copy {
+        task_id: u64,
+        address: address,
+        content: String,
+        completed: bool,
+    }
+
+    public entry fun create_list(account: &signer) {
+        let todo_list = TodoList {
+            tasks: table::new(),
+            task_counter: 0
+        };
+        // move the TodoList resource under the signer account
+        move_to(account, todo_list);
+    }
+
+    public entry fun create_task(account: &signer, content: String) acquires TodoList {
+        // gets the signer address
+        let signer_address = signer::address_of(account);
+        // assert signer has created a list
+        assert!(exists<TodoList>(signer_address), E_NOT_INITIALIZED);
+        // gets the TodoList resource
+        let todo_list = borrow_global_mut<TodoList>(signer_address);
+        // increment task counter
+        let counter = todo_list.task_counter + 1;
+        // creates a new Task
+        let new_task = Task {
+            task_id: counter,
+            address: signer_address,
+            content,
+            completed: false
+        };
+        // adds the new task into the tasks table
+        table::upsert(&mut todo_list.tasks, counter, new_task);
+        // sets the task counter to be the incremented counter
+        todo_list.task_counter = counter;
+        // fires a new task created event
+        event::emit(new_task);
+    }
+
+    public entry fun complete_task(account: &signer, task_id: u64) acquires TodoList {
+        // gets the signer address
+        let signer_address = signer::address_of(account);
+        // assert signer has created a list
+        assert!(exists<TodoList>(signer_address), E_NOT_INITIALIZED);
+        // gets the TodoList resource
+        let todo_list = borrow_global_mut<TodoList>(signer_address);
+        // assert task exists
+        assert!(table::contains(&todo_list.tasks, task_id), ETASK_DOESNT_EXIST);
+        // gets the task matched the task_id
+        let task_record = table::borrow_mut(&mut todo_list.tasks, task_id);
+        // assert task is not completed
+        assert!(task_record.completed == false, ETASK_IS_COMPLETED);
+        // update task as completed
+        task_record.completed = true;
+    }
+
+    #[test(admin = @0x123)]
+    public entry fun test_flow(admin: signer) acquires TodoList {
+        // creates an admin @todolist_addr account for test
+        account::create_account_for_test(signer::address_of(&admin));
+        // initialize contract with admin account
+        create_list(&admin);
+
+        // creates a task by the admin account
+        create_task(&admin, string::utf8(b"New Task"));
+        let todo_list = borrow_global<TodoList>(signer::address_of(&admin));
+        assert!(todo_list.task_counter == 1, 5);
+        let task_record = table::borrow(&todo_list.tasks, todo_list.task_counter);
+        assert!(task_record.task_id == 1, 6);
+        assert!(task_record.completed == false, 7);
+        assert!(task_record.content == string::utf8(b"New Task"), 8);
+        assert!(task_record.address == signer::address_of(&admin), 9);
+
+        // updates task as completed
+        complete_task(&admin, 1);
+        let todo_list = borrow_global<TodoList>(signer::address_of(&admin));
+        let task_record = table::borrow(&todo_list.tasks, 1);
+        assert!(task_record.task_id == 1, 10);
+        assert!(task_record.completed == true, 11);
+        assert!(task_record.content == string::utf8(b"New Task"), 12);
+        assert!(task_record.address == signer::address_of(&admin), 13);
+    }
+
+    #[test(admin = @0x123)]
+    #[expected_failure(abort_code = E_NOT_INITIALIZED)]
+    public entry fun account_can_not_update_task(admin: signer) acquires TodoList {
+        // creates an admin @todolist_addr account for test
+        account::create_account_for_test(signer::address_of(&admin));
+        // account can not toggle task as no list was created
+        complete_task(&admin, 2);
+    }
+}
+
+
+ cd ..
+ubuntu@ip-172-31-18-204:~/my-first-dapp/move$ /home/ubuntu/.local/bin/aptos move compile
+Compiling, may take a little while to download git dependencies...
+FETCHING GIT DEPENDENCY https://github.com/aptos-labs/aptos-core.git
+INCLUDING DEPENDENCY AptosFramework
+INCLUDING DEPENDENCY AptosStdlib
+INCLUDING DEPENDENCY MoveStdlib
+BUILDING my_todo_list
+warning[W09001]: unused alias
+  ┌─ /home/ubuntu/my-first-dapp/move/sources/todolist.move:3:26
+  │
+3 │     use aptos_framework::account;
+  │                          ^^^^^^^ Unused 'use' of alias 'account'. Consider removing it
+
+warning: unused alias
+  ┌─ /home/ubuntu/my-first-dapp/move/sources/todolist.move:3:26
+  │
+3 │     use aptos_framework::account;
+  │                          ^^^^^^^ Unused 'use' of alias 'account'. Consider removing it
+
+{
+  "Result": [
+    "e3989b8a7d3b521b7a0debc7abd3be1bc31b8282f5cf7dc363fd3431320e1301::todolist"
+  ]
+}
+ubuntu@ip-172-31-18-204:~/my-first-dapp/move$ /home/ubuntu/.local/bin/aptos move publish
+Compiling, may take a little while to download git dependencies...
+UPDATING GIT DEPENDENCY https://github.com/aptos-labs/aptos-core.git
+INCLUDING DEPENDENCY AptosFramework
+INCLUDING DEPENDENCY AptosStdlib
+INCLUDING DEPENDENCY MoveStdlib
+BUILDING my_todo_list
+warning[W09001]: unused alias
+  ┌─ /home/ubuntu/my-first-dapp/move/sources/todolist.move:3:26
+  │
+3 │     use aptos_framework::account;
+  │                          ^^^^^^^ Unused 'use' of alias 'account'. Consider removing it
+
+warning: unused alias
+  ┌─ /home/ubuntu/my-first-dapp/move/sources/todolist.move:3:26
+  │
+3 │     use aptos_framework::account;
+  │                          ^^^^^^^ Unused 'use' of alias 'account'. Consider removing it
+
+package size 2565 bytes
+Do you want to submit a transaction for a range of [179600 - 269400] Octas at a gas unit price of 100 Octas? [yes/no] >
+yes
+{
+  "Result": {
+    "transaction_hash": "0x1b2a6a42ce9983f85ba66e02e33dc41d52af843c9d1134818179e428e436d1a4",
+    "gas_used": 1796,
+    "gas_unit_price": 100,
+    "sender": "e3989b8a7d3b521b7a0debc7abd3be1bc31b8282f5cf7dc363fd3431320e1301",
+    "sequence_number": 0,
+    "success": true,
+    "timestamp_us": 1703785411094132,
+    "version": 3963652,
+    "vm_status": "Executed successfully"
+  }
+}
+ubuntu@ip-172-31-18-204:~/my-first-dapp/move$
+
+
+ubuntu@ip-172-31-22-180:~/my-first-dapp/move$ /home/ubuntu/.local/bin/aptos move test  --named-addresses todolist=0x86e1a9c1dc00011ffa2c8fa10eeb1553b48b2d3663a8d1b0334bc8ebe4c94c9a
+INCLUDING DEPENDENCY AptosFramework
+INCLUDING DEPENDENCY AptosStdlib
+INCLUDING DEPENDENCY MoveStdlib
+BUILDING my_todo_list
+warning: unused alias
+  ┌─ /home/ubuntu/my-first-dapp/move/sources/todolist.move:3:26
+  │
+3 │     use aptos_framework::account;
+  │                          ^^^^^^^ Unused 'use' of alias 'account'. Consider removing it
+
+Running Move unit tests
+[ PASS    ] 0x86e1a9c1dc00011ffa2c8fa10eeb1553b48b2d3663a8d1b0334bc8ebe4c94c9a::todolist::account_can_not_update_task
+[ FAIL    ] 0x86e1a9c1dc00011ffa2c8fa10eeb1553b48b2d3663a8d1b0334bc8ebe4c94c9a::todolist::test_flow
+
+Test failures:
+
+Failures in 0x86e1a9c1dc00011ffa2c8fa10eeb1553b48b2d3663a8d1b0334bc8ebe4c94c9a::todolist:
+
+┌── test_flow ──────
+│ error[E11001]: test failure
+│    ┌─ /home/ubuntu/.move/https___github_com_aptos-labs_aptos-core_git_mainnet/aptos-move/framework/aptos-framework/sources/event.move:19:9
+│    │
+│ 18 │     public fun emit<T: store + drop>(msg: T) {
+│    │                ---- In this function in 0x1::event
+│ 19 │         assert!(features::module_event_enabled(), std::error::invalid_state(EMODULE_EVENT_NOT_SUPPORTED));
+│    │         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Test was not expected to error, but it aborted with code 196609 originating in the module 0000000000000000000000000000000000000000000000000000000000000001::event rooted here
+│
+│
+│ stack trace
+│       todolist::create_task(/home/ubuntu/my-first-dapp/move/sources/todolist.move:59)
+│       todolist::test_flow(/home/ubuntu/my-first-dapp/move/sources/todolist.move:87)
+│
+└──────────────────
+
+Test result: FAILED. Total tests: 2; passed: 1; failed: 1
+{
+  "Error": "Move unit tests failed"
+}
+ubuntu@ip-172-31-22-180:~/my-first-dapp/move$
+
+
+
+### now work on front end (user interface) 
+
+## acquire files from aptos github:
+## https://github.com/aptos-labs/aptos-core/tree/main/aptos-move/move-examples/my_first_dapp
+
+ubuntu@ip-172-31-18-204:~/my-first-dapp$ npx create-react-app client --template typescript
+
+s
+ubuntu@ip-172-31-18-204:~/my-first-dapp/client/src$ vi App.tsx
+ubuntu@ip-172-31-18-204:~/my-first-dapp/client/src$
+## add the address.
+### add the following change to aptos / github code: 
+
+
+      // tasks table handle
+      // const tableHandle = (todoListResource as any).data.tasks.handle;
+      // tasks table counter
+      const      tableHandle = todoListResource.tasks.handle;
+      console.log(todoListResource.tasks.handle);
+
+      //const taskCounter = (todoListResource as any).data.task_counter;
+      //const taskCounter = todoListResource.tasks.task_counter;
+      console.log("taskCounter")
+      console.log(todoListResource.task_counter);
+
+      const taskCounter = todoListResource.task_counter;
+
+
+
+reportWebVitals.ts
+ubuntu@ip-172-31-18-204:~/my-first-dapp/client/src$ vi index.tsx
+ubuntu@ip-172-31-18-204:~/my-first-dapp/client/src$
+
+
+ubuntu@ip-172-31-18-204:~/my-first-dapp/client$ vi package.json
+ubuntu@ip-172-31-18-204:~/my-first-dapp/client$ rm -r node_modules/
+ubuntu@ip-172-31-18-204:~/my-first-dapp/client$ npm install
+
+
+npm run start
+
+
+
+ref: 
+
+https://medium.com/@mariokandut/how-to-clean-up-node-modules-5aed676156db
+
+https://www.digitalocean.com/community/tutorials/how-to-install-node-js-on-ubuntu-20-04
+
+https://mokshya.io/
+
+https://medium.com/@moncayolabs/aptos-move-struct-and-its-abilities-explained-has-drop-copy-key-store-0d7a7070f20d
+
+https://blocksecteam.medium.com/security-practices-in-move-development-2-aptos-coin-abe7ab7509fb
+
+
+https://www.linkedin.com/pulse/react-why-do-we-need-state-variable-when-have-local-sohil-lalakiya/
+
+
+troubleshooting: 
+
+see powerpoint / video reference
+
+
+
+
+https://fullnode.devnet.aptoslabs.com/v1/accounts/<wallet account>/resource/<deployed smart contract account>::todolist::TodoList
+
+
+
+https://fullnode.devnet.aptoslabs.com/v1/accounts/32d7b4d680421ab763089adc75404daa588ee3a043907a2d2359cd8ce7994cbf/resource/0x86e1a9c1dc00011ffa2c8fa10eeb1553b48b2d3663a8d1b0334bc8ebe4c94c9a::todolist::TodoList
+
+{"type":"0x86e1a9c1dc00011ffa2c8fa10eeb1553b48b2d3663a8d1b0334bc8ebe4c94c9a::todolist::TodoList","data":{"task_counter":"4","tasks":{"handle":"0x9f54c59aa5708e2d3da4f2e80f3ecfa9c17ca686db47909947d3a9a0537718e2"}}}
